@@ -13,10 +13,20 @@ st.set_page_config(page_title="Writing Word Bank Generator", page_icon="✍️",
 
 api_key = st.secrets.get("GEMINI_API_KEY", "")
 
+# Session State Initialization for word persistence
+if "wb_data" not in st.session_state:
+    st.session_state.wb_data = None
+if "categories" not in st.session_state:
+    st.session_state.categories = []
+if "task_type" not in st.session_state:
+    st.session_state.task_type = ""
+if "target_band" not in st.session_state:
+    st.session_state.target_band = ""
+
 
 # --- 1. API CASCADE ENGINE ---
 def call_gemini_cascade(prompt):
-    models = ["gemini-2.5-flash", "gemini-3.5-flash-lite", "gemini-1.5-flash"]
+    models = ["gemini-2.5-flash", "gemini-3.5-flash-lite", "gemini-2.0-flash"]
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"response_mime_type": "application/json", "temperature": 0.1}
@@ -94,6 +104,22 @@ def extract_word_bank(task_type, prompt_text, mandatory_words, target_year, targ
         "Return a JSON array where each object strictly contains keys: word, word_class, category, definition, model_phrase."
     )
     return call_gemini_cascade(prompt), categories
+
+
+def replace_single_word(rejected_word, category, task_type, target_band, current_words):
+    existing_list = ", ".join([w.get('word', '') for w in current_words if w.get('word')])
+    prompt = (
+        f"Act as an expert UK Secondary English teacher. Generate 1 replacement target vocabulary item for a {task_type} task "
+        f"for secondary pupils working at attainment band '{target_band}'.\n\n"
+        f"Category Required: '{category}'\n"
+        f"Word to replace: '{rejected_word}'\n"
+        f"Do NOT generate any of these words that are already in the word bank: {existing_list}.\n\n"
+        f"Use UK English spelling strictly throughout. Return a JSON array containing EXACTLY ONE object with keys: word, word_class, category, definition, model_phrase."
+    )
+    res = call_gemini_cascade(prompt)
+    if isinstance(res, list) and len(res) > 0:
+        return res[0]
+    return None
 
 
 # --- 3. LANDSCAPE A4 PDF GENERATOR ---
@@ -199,37 +225,69 @@ if generate_wb:
     elif not api_key:
         st.error("Missing GEMINI_API_KEY in Streamlit Secrets.")
     else:
-        with st.spinner("Generating UK English Word Bank..."):
+        with st.spinner("Generating..."):
             try:
-                wb_data, categories = extract_word_bank(wb_task, wb_prompt, wb_mandatory, wb_year, wb_band, wb_count)
-                wb_pdf = generate_word_bank_pdf(wb_data, categories, wb_task, wb_band)
-
-                st.markdown("---")
-                col_title, col_btn = st.columns([3, 1])
-                col_title.subheader("Generated Writing Support Grid")
-                col_btn.download_button(
-                    label="📥 Download Printable PDF (A4)",
-                    data=wb_pdf,
-                    file_name="Writing_Word_Bank.pdf",
-                    mime="application/pdf",
-                    type="primary",
-                    key="dl_wb_pdf"
-                )
-
-                # Render web preview grouped by category headings
-                for cat in categories:
-                    cat_items = [item for item in wb_data if item.get('category', '').lower() == cat.lower()]
-                    if cat_items:
-                        st.markdown(f"### {cat}")
-                        cols = st.columns(3)
-                        for idx, item in enumerate(cat_items):
-                            with cols[idx % 3]:
-                                with st.container(border=True):
-                                    st.subheader(item.get('word', ''))
-                                    st.caption(f"*({item.get('word_class', '')})*")
-                                    st.write(f"**Meaning:** {item.get('definition', '')}")
-                                    st.write(f"**Usage:** *\"{item.get('model_phrase', '')}\"*")
-                        st.write("")
-
+                data, categories = extract_word_bank(wb_task, wb_prompt, wb_mandatory, wb_year, wb_band, wb_count)
+                st.session_state.wb_data = data
+                st.session_state.categories = categories
+                st.session_state.task_type = wb_task
+                st.session_state.target_band = wb_band
             except Exception as e:
                 st.error(f"Error generating Word Bank: {e}")
+
+# Render Web Grid & PDF if data exists in Session State
+if st.session_state.wb_data is not None:
+    wb_pdf = generate_word_bank_pdf(
+        st.session_state.wb_data, 
+        st.session_state.categories, 
+        st.session_state.task_type, 
+        st.session_state.target_band
+    )
+
+    st.markdown("---")
+    col_title, col_btn = st.columns([3, 1])
+    col_title.subheader("Generated Writing Support Grid")
+    col_btn.download_button(
+        label="📥 Download Printable PDF (A4)",
+        data=wb_pdf,
+        file_name="Writing_Word_Bank.pdf",
+        mime="application/pdf",
+        type="primary",
+        key="dl_wb_pdf"
+    )
+
+    # Display items grouped by category with individual word replacement controls
+    for cat in st.session_state.categories:
+        cat_items = [item for item in st.session_state.wb_data if item.get('category', '').lower() == cat.lower()]
+        if cat_items:
+            st.markdown(f"### {cat}")
+            cols = st.columns(3)
+            for idx, item in enumerate(cat_items):
+                with cols[idx % 3]:
+                    with st.container(border=True):
+                        st.subheader(item.get('word', ''))
+                        st.caption(f"*({item.get('word_class', '')})*")
+                        st.write(f"**Meaning:** {item.get('definition', '')}")
+                        st.write(f"**Usage:** *\"{item.get('model_phrase', '')}\"*")
+                        
+                        btn_key = f"replace_{item.get('word', '')}_{idx}"
+                        if st.button("🔄 Replace Word", key=btn_key, use_container_width=True):
+                            with st.spinner("Replacing..."):
+                                try:
+                                    replacement = replace_single_word(
+                                        item.get('word', ''),
+                                        cat,
+                                        st.session_state.task_type,
+                                        st.session_state.target_band,
+                                        st.session_state.wb_data
+                                    )
+                                    if replacement:
+                                        # Find index in main list and swap
+                                        for orig_idx, orig_item in enumerate(st.session_state.wb_data):
+                                            if orig_item.get('word') == item.get('word'):
+                                                st.session_state.wb_data[orig_idx] = replacement
+                                                break
+                                        st.rerun()
+                                except Exception as e:
+                                    st.error(f"Could not replace word: {e}")
+            st.write("")
