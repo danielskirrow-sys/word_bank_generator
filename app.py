@@ -231,7 +231,7 @@ c1, c2 = st.columns(2)
 with c1:
     wb_prompt = st.text_area(
         "Writing Prompt / Context / Essay Title", 
-        placeholder="e.g. Write a description of a stormy sea OR Analyse how Priestley presents social responsibility in An Inspector Calls",
+        placeholder="e.g. Write a description of a stormy sea OR Analyse how Priestley presents social responsibility",
         height=140,
         key="wb_prompt_input"
     )
@@ -239,4 +239,82 @@ with c1:
 with c2:
     wb_mandatory = st.text_area(
         "Words to Include (Optional)", 
-        placeholder="
+        placeholder="e.g. hubris, ominous, juxtapose (Separate multiple words with commas)",
+        height=140,
+        key="wb_mandatory_input"
+    )
+
+generate_wb = st.button("Generate Word Bank Grid", type="primary", key="wb_generate_btn", use_container_width=True)
+
+if generate_wb:
+    if not wb_prompt.strip():
+        st.warning("Please enter a writing prompt or context.")
+    elif not api_key:
+        st.error("Missing GEMINI_API_KEY in Streamlit Secrets.")
+    else:
+        with st.spinner("Generating..."):
+            try:
+                data, categories = extract_word_bank(wb_task, wb_prompt, wb_mandatory, wb_year, wb_band, wb_count)
+                st.session_state.wb_data = data
+                st.session_state.categories = categories
+                st.session_state.task_type = wb_task
+                st.session_state.target_band = wb_band
+            except Exception as e:
+                st.error(f"Error generating Word Bank: {e}")
+
+# Render Web Grid & PDF if data exists in Session State
+if st.session_state.wb_data is not None:
+    wb_pdf = generate_word_bank_pdf(
+        st.session_state.wb_data, 
+        st.session_state.categories, 
+        st.session_state.task_type, 
+        st.session_state.target_band
+    )
+
+    st.markdown("---")
+    col_title, col_btn = st.columns([3, 1])
+    col_title.subheader("Generated Writing Support Grid")
+    col_btn.download_button(
+        label="📥 Download Printable PDF (A4)",
+        data=wb_pdf,
+        file_name="Writing_Word_Bank.pdf",
+        mime="application/pdf",
+        type="primary",
+        key="dl_wb_pdf"
+    )
+
+    # Display items grouped by category with individual word replacement controls
+    for cat in st.session_state.categories:
+        cat_items = [item for item in st.session_state.wb_data if item.get('category', '').lower() == cat.lower()]
+        if cat_items:
+            st.markdown(f"### {cat}")
+            cols = st.columns(3)
+            for idx, item in enumerate(cat_items):
+                with cols[idx % 3]:
+                    with st.container(border=True):
+                        st.subheader(item.get('word', ''))
+                        st.caption(f"*({item.get('word_class', '')})*")
+                        st.write(f"**Meaning:** {item.get('definition', '')}")
+                        st.write(f"**Usage:** *\"{item.get('model_phrase', '')}\"*")
+                        
+                        btn_key = f"replace_{item.get('word', '')}_{idx}"
+                        if st.button("🔄 Replace Word", key=btn_key, use_container_width=True):
+                            with st.spinner("Replacing..."):
+                                try:
+                                    replacement = replace_single_word(
+                                        item.get('word', ''),
+                                        cat,
+                                        st.session_state.task_type,
+                                        st.session_state.target_band,
+                                        st.session_state.wb_data
+                                    )
+                                    if replacement:
+                                        # Find index in main list and swap
+                                        for orig_idx, orig_item in enumerate(st.session_state.wb_data):
+                                            if orig_item.get('word') == item.get('word'):
+                                                st.session_state.wb_data[orig_idx] = replacement
+                                                break
+                                        st.rerun()
+                                except Exception as e:
+                                    st.error(f"Could not replace word: {e}")
+            st.write("")
