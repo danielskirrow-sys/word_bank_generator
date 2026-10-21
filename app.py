@@ -83,6 +83,31 @@ def extract_word_bank(task_type, prompt_text, mandatory_words, target_year, targ
             "3. 'Persuasive Adverbs', 4. 'Counter-argument Markers'."
         )
 
+    # Flightpath adjustment matrix mapping Year Group + Band to realistic pitch
+    flightpath_map = {
+        ("Year 7", "Developing (Grades 1-3)"): "Entry / Access Level (KS2 to KS3 bridge, highly grounded and clear vocabulary)",
+        ("Year 7", "Reaching (Grades 4-6)"): "Year 7 Secure / Working towards GCSE Grade 2-3 (Accessible Tier 2 academic words, no overly complex Latinate terms)",
+        ("Year 7", "Mastering (Grades 7-9)"): "Year 7 High Attainer / Working towards GCSE Grade 4-5 (Ambitious yet clean, practical vocabulary)",
+        
+        ("Year 8", "Developing (Grades 1-3)"): "Year 8 Foundation / GCSE Grade 1-2 equivalent",
+        ("Year 8", "Reaching (Grades 4-6)"): "Year 8 Secure / GCSE Grade 3-4 equivalent (Grounded academic Tier 2 words)",
+        ("Year 8", "Mastering (Grades 7-9)"): "Year 8 High Attainer / GCSE Grade 5-6 equivalent",
+        
+        ("Year 9", "Developing (Grades 1-3)"): "Year 9 Foundation / GCSE Grade 2-3 equivalent",
+        ("Year 9", "Reaching (Grades 4-6)"): "Year 9 Secure / GCSE Grade 4-5 equivalent",
+        ("Year 9", "Mastering (Grades 7-9)"): "Year 9 High Attainer / GCSE Grade 6-7 equivalent",
+
+        ("Year 10", "Developing (Grades 1-3)"): "GCSE Grades 1-3 Foundation",
+        ("Year 10", "Reaching (Grades 4-6)"): "GCSE Grades 4-6 Intermediate",
+        ("Year 10", "Mastering (Grades 7-9)"): "GCSE Grades 7-9 Higher Mastery",
+
+        ("Year 11", "Developing (Grades 1-3)"): "GCSE Grades 1-3 Foundation",
+        ("Year 11", "Reaching (Grades 4-6)"): "GCSE Grades 4-6 Intermediate",
+        ("Year 11", "Mastering (Grades 7-9)"): "GCSE Grades 7-9 Higher Mastery"
+    }
+
+    calibrated_level = flightpath_map.get((target_year, target_band), f"{target_year} {target_band}")
+
     mandatory_instruction = ""
     if mandatory_words.strip():
         mandatory_instruction = (
@@ -92,10 +117,11 @@ def extract_word_bank(task_type, prompt_text, mandatory_words, target_year, targ
 
     prompt = (
         f"Act as an expert UK Secondary English teacher. Generate a writing word bank for {target_year} pupils "
-        f"working at attainment band '{target_band}'. Use UK English spelling strictly throughout (e.g., analyse, characterise, emphasise).\n\n"
-        f"VOCABULARY LEVEL GUIDANCE FOR '{target_band}':\n"
-        f"- Ensure words are sophisticated yet high-utility and accessible. Avoid overly obscure, archaic, or esoteric words.\n"
-        f"- For Reaching (Grades 4-6) and Mastering (Grades 7-9), select ambitious academic and descriptive vocabulary that pupils can realistically embed into an exam response without sounding forced or unnatural.\n\n"
+        f"calibrated strictly to this secondary flightpath standard: '{calibrated_level}'. Use UK English spelling strictly throughout (e.g., analyse, characterise, emphasise).\n\n"
+        f"STRICT PEDAGOGICAL PEDAGOGY & PITCH GUIDELINES:\n"
+        f"- CRITICAL: Do NOT generate obscure, archaic, excessively rare, or pretentiously elevated words (e.g. avoid 'perspicacious', 'inimical', 'pusillanimous', 'ubiquitous').\n"
+        f"- For Key Stage 3 ({target_year}), focus on high-utility Tier 2 vocabulary that pupils can realistically use to improve their writing tone without sounding unnatural or forced.\n"
+        f"- Ensure definitions are short, pupil-friendly, and easy for an 11-16 year old to grasp immediately.\n\n"
         f"Task Type: {task_type}\n"
         f"Task Prompt/Context: '{prompt_text}'{mandatory_instruction}\n\n"
         f"{category_guidance}\n\n"
@@ -110,10 +136,11 @@ def replace_single_word(rejected_word, category, task_type, target_band, current
     existing_list = ", ".join([w.get('word', '') for w in current_words if w.get('word')])
     prompt = (
         f"Act as an expert UK Secondary English teacher. Generate 1 replacement target vocabulary item for a {task_type} task "
-        f"for secondary pupils working at attainment band '{target_band}'.\n\n"
+        f"for secondary pupils working at flightpath standard '{target_band}'.\n\n"
         f"Category Required: '{category}'\n"
         f"Word to replace: '{rejected_word}'\n"
         f"Do NOT generate any of these words that are already in the word bank: {existing_list}.\n\n"
+        f"STRICT RULE: Keep the word accessible, high-utility, and natural for UK secondary pupils. Avoid obscure or archaic terms.\n"
         f"Use UK English spelling strictly throughout. Return a JSON array containing EXACTLY ONE object with keys: word, word_class, category, definition, model_phrase."
     )
     res = call_gemini_cascade(prompt)
